@@ -1,0 +1,2 @@
+{ "26.0": "1ba867a8aa2f7dd5c02e5ef37fb84d17"}
+{https://github.com/linahahaa04-cmd/XeLane-Check/releases/download/Beta/app-debug.apk}
