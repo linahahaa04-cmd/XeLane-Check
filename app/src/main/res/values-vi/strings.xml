@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">XeLane</string>
+    <string name="app_credit">XeLane — bởi zunguwu</string>
+    <string name="menu_title">XeLane</string>
+    <string name="start_page_headline">XeLane</string>
+    <string name="hamburger_mode_youtube">Xem YouTube</string>
+    <string name="hamburger_mode_tv">Xem truyền hình</string>
+    <string name="hamburger_mode_full_menu">Menu trình duyệt (XeLane)…</string>
+    <string name="hamburger_mode_description">YouTube và truyền hình</string>
+    <string name="hamburger_fermata_tv_hint">Trong Fermata: TV → Thêm playlist M3U IPTV.</string>
+    <string name="hamburger_tv_web_fallback_hint">Đã mở trang xem trực tuyến VTV. Playlist IPTV riêng (M3U) nên dùng app như Fermata.</string>
+    <string name="render_fallback_software">Tăng tốc phần cứng lỗi. Đã chuyển sang render phần mềm.</string>
+</resources>
