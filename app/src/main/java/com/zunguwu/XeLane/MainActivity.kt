@@ -2,7 +2,6 @@ package com.zunguwu.XeLane
 
 import android.Manifest
 import android.content.Context
-import android.content.DialogInterface
 import android.content.Intent
 import android.net.Uri
 import android.content.pm.ApplicationInfo
@@ -35,11 +34,14 @@ import com.zunguwu.XeLane.analytics.UmamiTracker
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.graphics.ColorUtils
+import androidx.core.view.MenuCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.isVisible
@@ -61,6 +63,7 @@ import com.zunguwu.XeLane.web.updatePageDarkening
 import com.zunguwu.XeLane.web.updateUserAgentProfile
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.DynamicColors
+import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textview.MaterialTextView
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
@@ -69,7 +72,9 @@ import android.widget.RadioGroup
 import com.zunguwu.XeLane.settings.SettingsViews
 import androidx.appcompat.widget.PopupMenu
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import org.woheller69.freeDroidWarn.R as FreeDroidWarnR
+import com.zunguwu.XeLane.update.BackgroundSelfUpdater
+import com.zunguwu.XeLane.update.UpdateCheckResult
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
     private data class BrowserTab(
@@ -127,6 +132,12 @@ class MainActivity : AppCompatActivity() {
     private var loadedStartPageBackgroundBitmap: Bitmap? = null
     private var cachedStartPageGradientSignature: Int = 0
 
+    private var downloadProgressDialog: AlertDialog? = null
+    private var downloadProgressTextView: android.widget.TextView? = null
+    private var downloadProgressBar: LinearProgressIndicator? = null
+    @Volatile private var foregroundDownloadActive = false
+    @Volatile private var updateCheckInProgress = false
+
     override fun attachBaseContext(newBase: Context?) {
         if (newBase == null) {
             super.attachBaseContext(null)
@@ -156,7 +167,11 @@ class MainActivity : AppCompatActivity() {
         setupUi()
         setupBackPressHandling()
         ensureNotificationPermissionIfNeeded()
-        showFreeDroidWarnOnUpgradeMaterial()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        showStartupUpdateFlow()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -183,7 +198,22 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onStop() {
+        super.onStop()
+        if (foregroundDownloadActive) {
+            Toast.makeText(applicationContext, R.string.update_download_background_toast, Toast.LENGTH_SHORT).show()
+            downloadProgressDialog?.dismiss()
+            downloadProgressDialog = null
+            downloadProgressTextView = null
+            downloadProgressBar = null
+        }
+    }
+
     override fun onDestroy() {
+        downloadProgressDialog?.dismiss()
+        downloadProgressDialog = null
+        downloadProgressTextView = null
+        downloadProgressBar = null
         handler.removeCallbacks(autoHideMenuFab)
         handler.removeCallbacks(showMenuFabRunnable)
         exitFullscreen()
@@ -494,44 +524,192 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showFreeDroidWarnOnUpgradeMaterial() {
+    private fun showStartupUpdateFlow() {
         if (isFinishing || isDestroyed) return
-
-        val appVersionCode = runCatching {
-            packageManager.getPackageInfo(packageName, 0).longVersionCode.toInt()
-        }.getOrDefault(1)
-
-        val prefManager = getSharedPreferences("${packageName}_preferences", Context.MODE_PRIVATE)
-        val warnedVersionCode = prefManager.getInt(FREE_DROID_WARN_VERSION_KEY, 0)
-        if (appVersionCode <= warnedVersionCode) return
-
-        val view = layoutInflater.inflate(R.layout.dialog_free_droid_warn, null)
-        val titleView = view.findViewById<android.widget.TextView>(R.id.free_droid_warn_title)
-        val messageView = view.findViewById<android.widget.TextView>(R.id.free_droid_warn_message)
-        titleView.text = getString(android.R.string.dialog_alert_title)
-        messageView.text = getString(FreeDroidWarnR.string.dialog_Warning)
-
-        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(
-            this,
-            com.google.android.material.R.style.ThemeOverlay_Material3_MaterialAlertDialog
-        )
-            .setView(view)
-            .setNegativeButton(FreeDroidWarnR.string.dialog_more_info) { _, _ ->
-                loadUrlFromIntent(KEEP_ANDROID_OPEN_URL)
+        if (updateCheckInProgress) return
+        updateCheckInProgress = true
+        BackgroundSelfUpdater.execute {
+            val result = try {
+                BackgroundSelfUpdater.checkForUpdate(applicationContext)
+            } catch (_: Exception) {
+                UpdateCheckResult.FetchFailed
             }
-            .setNeutralButton(FreeDroidWarnR.string.solution) { _, _ ->
-                loadUrlFromIntent(FREE_DROID_WARN_SOLUTIONS_URL)
+            runOnUiThread {
+                updateCheckInProgress = false
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                when (result) {
+                    UpdateCheckResult.UpToDate -> Unit
+                    is UpdateCheckResult.UpdateAvailable -> showUpdateOfferDialog(result)
+                    UpdateCheckResult.FetchFailed,
+                    UpdateCheckResult.MetadataInvalid -> Unit
+                }
             }
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                prefManager.edit().putInt(FREE_DROID_WARN_VERSION_KEY, appVersionCode).apply()
+        }
+    }
+
+    private fun showUpdateOfferDialog(info: UpdateCheckResult.UpdateAvailable) {
+        if (isFinishing || isDestroyed) return
+        val detail = info.changelog.takeIf { it.isNotBlank() }
+            ?: getString(R.string.update_changelog_unavailable)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.update_available_title)
+            .setMessage(detail)
+            .setCancelable(false)
+            .setPositiveButton(R.string.update_button_update) { _, _ ->
+                startForegroundDownloadAndInstall(info)
             }
             .create()
+            .also { dialog ->
+                dialog.setCanceledOnTouchOutside(false)
+                dialog.show()
+            }
+    }
 
-        dialog.setCanceledOnTouchOutside(false)
-        dialog.show()
-        dialog.getButton(DialogInterface.BUTTON_NEUTRAL)?.setTextColor(
-            resolveThemeColor(androidx.appcompat.R.attr.colorError)
+    private fun startForegroundDownloadAndInstall(info: UpdateCheckResult.UpdateAvailable) {
+        if (isFinishing || isDestroyed) return
+        val progressView = layoutInflater.inflate(R.layout.dialog_update_download_progress, null)
+        val progressText = progressView.findViewById<android.widget.TextView>(R.id.updateDownloadProgressText)
+        val progressBar = progressView.findViewById<LinearProgressIndicator>(R.id.updateDownloadProgressBar)
+        progressText.text = getString(R.string.update_download_progress_percent, 0)
+        progressBar.isIndeterminate = false
+        progressBar.progress = 0
+        val loading = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.update_downloading_title)
+            .setView(progressView)
+            .setCancelable(false)
+            .create()
+        downloadProgressDialog = loading
+        downloadProgressTextView = progressText
+        downloadProgressBar = progressBar
+        loading.show()
+
+        foregroundDownloadActive = true
+        val dest = File(cacheDir, "updates/xelane_update.apk")
+
+        BackgroundSelfUpdater.execute {
+            try {
+                val ok = BackgroundSelfUpdater.downloadApkWithProgress(
+                    info.downloadUrl,
+                    dest
+                ) { read, total ->
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        val msg = if (total > 0) {
+                            val pct = ((read * 100) / total).toInt().coerceIn(0, 100)
+                            downloadProgressBar?.isIndeterminate = false
+                            downloadProgressBar?.progress = pct
+                            getString(R.string.update_download_progress_percent, pct)
+                        } else {
+                            downloadProgressBar?.isIndeterminate = true
+                            getString(R.string.update_download_progress_unknown)
+                        }
+                        downloadProgressTextView?.text = msg
+                    }
+                }
+
+                runOnUiThread {
+                    downloadProgressDialog?.dismiss()
+                    downloadProgressDialog = null
+                    downloadProgressTextView = null
+                    downloadProgressBar = null
+                }
+
+                if (!ok) {
+                    dest.delete()
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) {
+                            Toast.makeText(this, R.string.update_download_failed, Toast.LENGTH_LONG).show()
+                            terminateAppAfterUpdateFailure()
+                        }
+                    }
+                    return@execute
+                }
+
+                info.sha256?.let { expected ->
+                    if (!BackgroundSelfUpdater.verifyDownloadedSha256(dest, expected)) {
+                        dest.delete()
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                Toast.makeText(this, R.string.update_checksum_failed, Toast.LENGTH_LONG).show()
+                                terminateAppAfterUpdateFailure()
+                            }
+                        }
+                        return@execute
+                    }
+                }
+
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        showReadyToInstallDialog(dest)
+                    }
+                }
+            } finally {
+                foregroundDownloadActive = false
+            }
+        }
+    }
+
+    private fun showReadyToInstallDialog(apkFile: File) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.update_ready_title)
+            .setMessage(R.string.update_ready_message)
+            .setCancelable(false)
+            .setPositiveButton(R.string.update_button_update) { _, _ ->
+                BackgroundSelfUpdater.execute {
+                    try {
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                openDownloadedApkForInstall(apkFile)
+                            }
+                        }
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                finishAffinity()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        val messageRes = if (
+                            e.message?.contains("INSUFFICIENT_STORAGE", ignoreCase = true) == true ||
+                            e.message?.contains("not enough space", ignoreCase = true) == true
+                        ) {
+                            R.string.update_install_no_space
+                        } else {
+                            R.string.update_install_failed
+                        }
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                Toast.makeText(this, messageRes, Toast.LENGTH_LONG).show()
+                                terminateAppAfterUpdateFailure()
+                            }
+                        }
+                    }
+                }
+            }
+            .setNegativeButton(R.string.update_button_later) { _, _ ->
+                apkFile.delete()
+            }
+            .show()
+    }
+
+    private fun terminateAppAfterUpdateFailure() {
+        finishAffinity()
+        handler.postDelayed({
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }, 200)
+    }
+
+    private fun openDownloadedApkForInstall(apkFile: File) {
+        val apkUri = FileProvider.getUriForFile(
+            this,
+            "${BuildConfig.APPLICATION_ID}.update.fileprovider",
+            apkFile
         )
+        val installIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(installIntent)
     }
 
     private fun initializeTabs(
@@ -1311,6 +1489,10 @@ class MainActivity : AppCompatActivity() {
         val menu = popup.menu
         menu.add(0, HAMBURGER_MENU_YOUTUBE, 0, R.string.hamburger_mode_youtube)
         menu.add(0, HAMBURGER_MENU_TV, 0, R.string.hamburger_mode_tv)
+        menu.add(1, HAMBURGER_MENU_FACEBOOK_LOGIN, 100, R.string.hamburger_mode_facebook_login)
+        menu.setGroupVisible(1, true)
+        menu.setGroupEnabled(1, true)
+        MenuCompat.setGroupDividerEnabled(menu, true)
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 HAMBURGER_MENU_YOUTUBE -> {
@@ -1319,6 +1501,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 HAMBURGER_MENU_TV -> {
                     openTvLandingPage()
+                    true
+                }
+                HAMBURGER_MENU_FACEBOOK_LOGIN -> {
+                    navigateToAddress("https://www.facebook.com/login", closeMenuAfterNavigate = true)
                     true
                 }
                 else -> false
@@ -2624,14 +2810,12 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val HAMBURGER_MENU_YOUTUBE = 1
         private const val HAMBURGER_MENU_TV = 2
+        private const val HAMBURGER_MENU_FACEBOOK_LOGIN = 3
         private const val MENU_BUTTON_AUTO_HIDE_DELAY_MS = 3000L
         private const val MENU_BUTTON_SHOW_DELAY_MS = 500L
         private const val ERROR_PAGE_ASSET_PREFIX = "file:///android_asset/error.html"
         private const val GITHUB_REPO_URL = "https://github.com/kododake/AABrowser"
         private const val START_PAGE_SPONSOR_URL = "https://github.com/sponsors/kododake"
-        private const val KEEP_ANDROID_OPEN_URL = "https://keepandroidopen.org"
-        private const val FREE_DROID_WARN_SOLUTIONS_URL = "https://github.com/woheller69/FreeDroidWarn?tab=readme-ov-file#solutions"
-        private const val FREE_DROID_WARN_VERSION_KEY = "versionCodeWarn"
         private const val REQUEST_CODE_POST_NOTIFICATIONS = 1101
         private const val REQUEST_CODE_RECORD_AUDIO = 1102
     }

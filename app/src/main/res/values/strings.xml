@@ -33,6 +33,7 @@
     
     <string name="hamburger_mode_youtube">Watch YouTube</string>
     <string name="hamburger_mode_tv">Watch TV</string>
+    <string name="hamburger_mode_facebook_login">Log in with Facebook</string>
     <string name="hamburger_mode_full_menu">Browser menu (XeLane)…</string>
     <string name="hamburger_mode_description">YouTube and TV</string>
     <string name="hamburger_fermata_tv_hint">In Fermata: TV → Add M3U IPTV playlist.</string>
@@ -222,4 +223,28 @@
     <string name="media_notification_channel_name">Media playback</string>
     <string name="media_notification_channel_description">Controls media playback in web pages</string>
     <string name="media_notification_content_text">Playing media in WebView</string>
+
+    <string name="update_checking_title">Đang kiểm tra cập nhật</string>
+    <string name="update_checking_message">Vui lòng đợi trong giây lát…</string>
+    <string name="update_latest_title">Phiên bản mới nhất</string>
+    <string name="update_latest_message">Bạn đang dùng phiên bản mới nhất.</string>
+    <string name="update_available_title">Có bản cập nhật mới</string>
+    <string name="update_available_message">Đã có phiên bản mới. Bạn có muốn cập nhật ngay không?</string>
+    <string name="update_changelog_unavailable">Không có changelog để hiển thị.</string>
+    <string name="update_button_update">Cập nhật</string>
+    <string name="update_button_later">Để sau</string>
+    <string name="update_ok">Đồng ý</string>
+    <string name="update_downloading_title">Đang tải bản cập nhật</string>
+    <string name="update_ready_title">Đã tải xong bản cập nhật</string>
+    <string name="update_ready_message">Bạn có muốn cài đặt bản cập nhật ngay bây giờ không?</string>
+    <string name="update_download_progress_percent">Đang tải… %1$d%%</string>
+    <string name="update_download_progress_unknown">Đang tải…</string>
+    <string name="update_download_background_toast">Đang tải cập nhật trong nền…</string>
+    <string name="update_download_failed">Tải bản cập nhật thất bại.</string>
+    <string name="update_checksum_failed">Tệp tải về không khớp checksum.</string>
+    <string name="update_install_failed">Không thể cài đặt bản cập nhật.</string>
+    <string name="update_install_no_space">Không đủ dung lượng bộ nhớ trong để cài bản cập nhật.</string>
+    <string name="update_check_failed">Không kiểm tra được cập nhật.</string>
+    <string name="auto_media_item_title">Open XeLane</string>
+    <string name="auto_media_item_subtitle">Tap play to open XeLane browser</string>
 </resources>

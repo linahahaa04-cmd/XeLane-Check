@@ -15,12 +15,17 @@ android {
 
     defaultConfig {
         applicationId = "com.zunguwu.XeLane"
-        minSdk = 35
+        minSdk = 33
         targetSdk = 36
         versionCode = 7
-        versionName = "2.0"
+        versionName = "26.0"
 
         buildConfigField("String", "DEV", "\"zunguwu\"")
+        buildConfigField(
+            "String",
+            "REMOTE_UPDATE_METADATA_URL",
+            "\"https://github.com/linahahaa04-cmd/XeLane-Check/releases/download/checksum/update.json\""
+        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -111,6 +116,7 @@ dependencies {
     implementation(libs.androidx.webkit)
     implementation(libs.google.material)
     implementation(libs.androidx.car.app)
+    implementation("androidx.media:media:1.7.0")
     implementation(libs.zxing.core)
 
     implementation(libs.okhttp)
